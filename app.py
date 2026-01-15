@@ -2,8 +2,8 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-# [Áß¿ä] º»ÀÎÀÇ API Å°¸¦ ÀÔ·ÂÇÏ¼¼¿ä
-API_KEY = "¿©±â¿¡_º»ÀÎÀÇ_API_Å°¸¦_³ÖÀ¸¼¼¿ä"
+# [ì¤‘ìš”] ë³¸ì¸ì˜ API í‚¤ë¥¼ ì…ë ¥í•˜ì„¸ìš”
+API_KEY = "ì—¬ê¸°ì—_ë³¸ì¸ì˜_API_í‚¤ë¥¼_ë„£ìœ¼ì„¸ìš”"
 
 st.set_page_config(page_title="Company Bot")
 st.title("Company AI Bot")
