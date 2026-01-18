@@ -1,5 +1,6 @@
 import re
 import io
+import base64
 from datetime import datetime
 
 import streamlit as st
@@ -45,8 +46,7 @@ MY_INSTRUCTION = r"""
 - **인용발명** → **Reference** (Title Case, Bold)
 - **보정서 제출시 참고사항** → **Notes for Amendment** (Title Case, Bold)
 - **[첨부]** → **Attachments:** (Title Case, 콜론 포함, Bold)
-- 인용발명을 쓸 때 아래와 같은 형식으로 번역을 하도록 하되 **특허 공보 번호 데이터 누락을 하지 않도록 한다.** 
-**Reference 2:    Korean Patent Application Publication No. 10-2019-0019667(February 27, 2019)**
+- 인용발명을 쓸 때 아래와 같은 형식으로 번역을 하도록 하되 **특허 공보 번호 데이터 누락을 하지 않도록 한다.** **Reference 2:    Korean Patent Application Publication No. 10-2019-0019667(February 27, 2019)**
 
 ### [4. 상단 고정 표준 문구 (Introductory Text - Forced Mapping)]
 
@@ -120,15 +120,13 @@ According to the Guidelines for Time Extensions, the Examiner determines whether
 - **절대 금지:** `<< 안내 >>` 섹션을 만났다고 해서 앞선 본문 번역을 생략하거나 요약하는 행위.
 - 반드시 본문의 마지막 섹션(예: [첨부] 또는 심사관 성명 라인)까지 출력을 완료한 후, 그 바로 다음 줄에 위 고정 문구를 붙여넣으십시오.
 
-**[7. 번역의 기본 원칙 (Literal Translation & Completeness)]** 
-지침에서 달리 지정한 고정 문구를 제외하고는 다음과 같은 번역 기본원칙을 준수한다.
+**[7. 번역의 기본 원칙 (Literal Translation & Completeness)]** 지침에서 달리 지정한 고정 문구를 제외하고는 다음과 같은 번역 기본원칙을 준수한다.
 
 - **직역(Literal Translation) 절대 원칙:** 번역은 문학적 윤색을 배제하고 단어 및 문장 구조를 1:1로 대응시키는 직역을 원칙으로 하며, 원문에 문법적 오류나 비문이 있더라도 이를 수정하지 않고 그대로 번역한다.
 - **[절대 금지]:** 의역, 요약, 생략, 중략, 임의 추가는 전면 금지되며, 원문에 없는 내용이나 접속사(그래서, 하지만 등)를 추가해서도 안 된다.
 - **용어 고정 매핑:** 명세서 전체에 걸쳐 동일한 국문 용어는 반드시 동일한 영문 용어로 고정 매핑하여 사용한다.
 
-**[8. 번역 출력 원칙 (Batch Output)]** 
-출력할 때 요약을 하거나 핵심만을 보여줘서는 안 된다.
+**[8. 번역 출력 원칙 (Batch Output)]** 출력할 때 요약을 하거나 핵심만을 보여줘서는 안 된다.
 
 **[출력 분할 규칙 – Hard Limit + Number-Aware Cut]**
 
@@ -150,9 +148,7 @@ According to the Guidelines for Time Extensions, the Examiner determines whether
 - 문서는 **[첨부] → 날짜 → 발행기관/심사관(서명 라인) → << 안내 >>** 순서까지 **모두 출력된 경우에만** 종료된 것으로 판단한다.
 - 위 종결부 블록은 **순서를 변경하거나 분할하지 않는다.**
 
-**[번역 제외 대상]** 
-
-- 지침 내용: 본 문서의 번역 시, 아래에 해당하는 내용은  번역하지 않으며, 최종 번역본에서 완전히 무시하고 누락(Omit) 시키도록 합니다.
+**[번역 제외 대상]** - 지침 내용: 본 문서의 번역 시, 아래에 해당하는 내용은  번역하지 않으며, 최종 번역본에서 완전히 무시하고 누락(Omit) 시키도록 합니다.
 - 번역 제외 대상 예시:
     - 수신: 서울특별시 종로구 세종대로 149, 14층 (세종로, 광화문빌딩)(법무법인센트럴)장훈 귀하(귀중) 03186
 - 번역시, 페이지 번호에 해당하는 것은 번역하지 않고 생략하도록 한다.
@@ -170,9 +166,9 @@ According to the Guidelines for Time Extensions, the Examiner determines whether
 - 이미지가 있던 정확한 위치에 <###FIGURE>라는 문자열만 단독 행으로 표기합니다.
 """
 
-# =========================
+# =========================================================================
 # Streamlit App Logic
-# =========================
+# =========================================================================
 
 def read_docx(file) -> str:
     doc = Document(file)
@@ -183,19 +179,13 @@ def read_pdf(file) -> str:
     return "\n".join([page.extract_text() or "" for page in reader.pages]).strip()
 
 def preclean_bk(text: str) -> str:
-    # [수정 제안 1]: 노이즈 및 환각 방지를 위한 강력한 전처리
-    # 1. 주소지 정보 제거
     text = re.sub(r"수신\s*:.*?(?:귀하|귀중).*", "", text, flags=re.DOTALL)
-    # 2. 페이지 번호 제거 (1/11, 10/11 등)
     text = re.sub(r"\d+\s*/\s*\d+", "", text)
-    # 3. 문서 관리/출원 번호 제거 (10-2022-7005098 등 노이즈 제거)
     text = re.sub(r"\d{2}-\d{4}-\d{7}", "", text)
-    # 4. 단순 나열 숫자들(107005098 등) 제거
     text = re.sub(r"(?m)^\d{9,10}$", "", text)
     return text.strip()
 
 def split_into_numbered_blocks(text: str) -> list:
-    # [8. 출력 분할 규칙] 번호 단락 경계 분할
     pat = re.compile(r"(?m)^(?:\s*(\d+\.)\s+|\s*(\(\d+\))\s+|\s*([①-⑩])\s+|\s*(\[첨\s*부\])\s*|(- 보정서 제출시 참고사항 -))")
     idxs = [m.start() for m in pat.finditer(text)]
     if not idxs: return [text]
@@ -217,25 +207,27 @@ client = OpenAI(api_key=OPENAI_KEY)
 # --- 세션 상태 초기화 ---
 if "idx" not in st.session_state: st.session_state.idx = 0
 if "accum" not in st.session_state: st.session_state.accum = ""
+if "img_trans_result" not in st.session_state: st.session_state.img_trans_result = {}
 
-# --- 1. 사이드바: 파일 및 이미지 업로드 ---
+# =========================================================================
+# 📂 1. 사이드바: 통합 파일 및 이미지 업로드 (중복 제거됨)
+# =========================================================================
 with st.sidebar:
     st.header("📂 1. 문서 업로드")
-    uploaded_docs = st.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True)
+    uploaded_docs = st.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True, key="doc_uploader")
     
     st.divider()
-    st.header("🖼️ 2. 표/도면 이미지 업로드")
-    # [표 인식 및 위치 적용 규칙]을 위한 이미지 업로더
-    captured_images = st.file_uploader(
-        "B_K 통지서 내 표/도면 캡처본", 
+    
+    st.header("🖼️ 2. 이미지 번역용 파일 업로드")
+    st.caption("통지서 내 표/도면 캡처 이미지")
+    img_for_translation = st.file_uploader(
+        "번역할 이미지(표)를 업로드하세요.", 
         type=['png', 'jpg', 'jpeg'], 
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key="img_translator_main"
     )
 
-ae_text = ""
-bk_text = ""
-file_prefix = "OABASE"
-
+ae_text, bk_text, file_prefix = "", "", "OABASE"
 if uploaded_docs:
     for f in uploaded_docs:
         content = read_docx(f) if f.name.endswith(".docx") else read_pdf(f)
@@ -249,7 +241,9 @@ if not ae_text or not bk_text:
     st.info("A_E(기준 명세서)와 B_K(국문 통지서) 파일을 사이드바에서 업로드해 주세요.")
     st.stop()
 
-# --- 2. 헤더 필드 입력 (지침 2번 규칙) ---
+# =========================================================================
+# 📝 2. 헤더 필드 입력
+# =========================================================================
 st.subheader("📝 헤더 필드 입력")
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -261,49 +255,26 @@ with c2:
 with c3:
     title_inv = st.text_input("Title of Invention", "METHOD OF PRODUCING A MULTILAYER FILTER MEDIUM...")
 
-# --- 3. 번역 인터페이스 ---
+# =========================================================================
+# 📑 3. 줄글 번역 인터페이스
+# =========================================================================
 blocks = split_into_numbered_blocks(bk_text)
 st.divider()
-st.markdown(f"### 번역 진행 상태: {st.session_state.idx + 1} / {len(blocks)} 블록")
+st.markdown(f"### 📑 줄글 번역 진행 상태: {st.session_state.idx + 1} / {len(blocks)} 블록")
 
 col_left, col_right = st.columns(2)
 with col_left:
     st.text_area("국문 원본 블록", blocks[st.session_state.idx], height=400)
-    if captured_images:
-        with st.expander("🖼️ 업로드된 이미지 확인"):
-            for img in captured_images:
-                st.image(img, caption=img.name)
 
 with col_right:
     st.text_area("누적 영문 번역본", st.session_state.accum, height=400)
 
-
-# --- 1. 사이드바: 파일 및 이미지 업로드 ---
-with st.sidebar:
-    st.header("📂 1. 문서 업로드")
-    uploaded_docs = st.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True, key="doc_uploader")
-    
-    st.divider()
-    
-    st.header("🖼️ 2. 이미지 번역용 파일 업로드") # 이미지 번역 섹션 명시
-    st.caption("통지서 내 표/도면 캡처 이미지")
-    img_for_translation = st.file_uploader(
-        "번역할 이미지(표)를 업로드하세요.", 
-        type=['png', 'jpg', 'jpeg'], 
-        accept_multiple_files=True,
-        key="img_translator_uploader"
-    )
-
-# --- 버튼 레이아웃 ---
+# 버튼 레이아웃
 btn_col1, btn_col2, btn_col3 = st.columns([1,1,1])
 
 if btn_col1.button("▶️ 현재 파트 번역 시작", type="primary"):
     header_hint = f"Mailing Date: {mail_date}\nDue Date: {due_date}\nApplicant: {applicant}\nApp No: {app_no}\nTitle: {title_inv}"
-    
-    # 지침 v2.1 전문 + 이미지 앵커링 정보 포함 프롬프트
-    img_info = f"\n[이미지 업로드됨]: {len(captured_images)}개. 지침의 '표 인식 규칙'에 따라 삽입 위치 결정." if captured_images else ""
-    # 중복 출력 방지를 위한 추가 지침 주입
-    prompt = f"**[주의]**: 현재 제공된 [번역대상] 블록 내에 존재하지 않는 텍스트(이전 페이지 내용 등)를 임의로 다시 생성하지 마십시오.\n\n[A_E 용어]: {ae_text[:1500]}...\n\n[헤더]: {header_hint}\n\n[번역대상]: {blocks[st.session_state.idx]}{img_info}"
+    prompt = f"[A_E 용어]: {ae_text[:1500]}...\n\n[헤더]: {header_hint}\n\n[번역대상]: {blocks[st.session_state.idx]}"
     
     with st.spinner("기계적 번역 엔진 가동 중..."):
         try:
@@ -316,7 +287,6 @@ if btn_col1.button("▶️ 현재 파트 번역 시작", type="primary"):
                 temperature=0
             )
             translation = res.choices[0].message.content
-            # 중복 체크 후 누적
             st.session_state.accum += ("\n\n" + translation if st.session_state.accum else translation)
             st.rerun()
         except Exception as e:
@@ -332,20 +302,67 @@ if btn_col3.button("🔄 초기화"):
     st.session_state.accum = ""
     st.rerun()
 
-# --- 4. 최종 다운로드 (이미지 삽입 로직 포함) ---
+# =========================================================================
+# 🖼️ 4. 이미지(표) 전용 번역 인터페이스 (독립 배치)
+# =========================================================================
+st.divider()
+st.subheader("🖼️ 표(Table) 이미지 전용 번역기")
+
+if img_for_translation:
+    for uploaded_img in img_for_translation:
+        with st.expander(f"📷 이미지 분석 및 번역: {uploaded_img.name}", expanded=True):
+            img_c1, img_c2 = st.columns(2)
+            with img_c1:
+                st.image(uploaded_img, caption="원본 이미지", use_container_width=True)
+            
+            with img_c2:
+                if st.button(f"✨ 번역 실행 ({uploaded_img.name})", key=f"btn_{uploaded_img.name}"):
+                    # 이미지 base64 인코딩
+                    base64_image = base64.b64encode(uploaded_img.getvalue()).decode('utf-8')
+                    
+                    # 이미지 번역용 전용 지침 (요청하신 지침 반영)
+                    img_instruction = MY_INSTRUCTION + """
+                    [이미지 번역 특별 지침]
+                    1. 표(Table)의 완벽 재현: 원문에 표가 있을 경우, Markdown 형식을 사용하여 동일한 행(Row)과 열(Column) 구조를 유지한 표로 산출하라.
+                    2. 표 내부 일대일 번역: 표 안의 모든 텍스트는 임의로 요약하거나 생략하지 않고, 원문의 내용과 일대일로 대응되도록 직역하여 삽입한다.
+                    3. 구조 유지: 셀 간 텍스트 이동, 병합, 분할, 재배치는 금지한다.
+                    4. 오직 번역된 영문 Markdown 표만 출력하라. 다른 설명은 생략한다.
+                    """
+                    
+                    with st.spinner(f"{uploaded_img.name} 분석 중..."):
+                        try:
+                            response = client.chat.completions.create(
+                                model=MODEL_NAME,
+                                messages=[
+                                    {"role": "system", "content": img_instruction},
+                                    {"role": "user", "content": [
+                                        {"type": "text", "text": "이 이미지 속의 표를 지침에 따라 영문 Markdown 표로 번역해줘."},
+                                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                                    ]}
+                                ],
+                                temperature=0
+                            )
+                            st.session_state.img_trans_result[uploaded_img.name] = response.choices[0].message.content
+                        except Exception as e:
+                            st.error(f"이미지 번역 오류: {e}")
+                
+                # 번역 결과 출력
+                if uploaded_img.name in st.session_state.img_trans_result:
+                    st.markdown("### 영문 번역 결과 (Table)")
+                    st.markdown(st.session_state.img_trans_result[uploaded_img.name])
+else:
+    st.info("사이드바 2번 섹션에서 이미지 파일을 업로드하면 여기에 번역 칸이 활성화됩니다.")
+
+# =========================================================================
+# 📥 5. 최종 다운로드
+# =========================================================================
 if st.session_state.accum:
     st.divider()
     if st.button("📥 최종 Word 파일 생성 및 다운로드"):
         doc = Document()
         for block in st.session_state.accum.split('\n\n'):
             doc.add_paragraph(block)
-            # (향후 고도화 시 이미지 삽입 태그 인식 로직 추가 가능)
         
         buf = io.BytesIO()
         doc.save(buf)
         st.download_button("Word 다운로드", buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
-
-
-
-
-
