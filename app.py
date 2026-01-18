@@ -277,6 +277,23 @@ with col_left:
 with col_right:
     st.text_area("누적 영문 번역본", st.session_state.accum, height=400)
 
+
+# --- 1. 사이드바: 파일 및 이미지 업로드 ---
+with st.sidebar:
+    st.header("📂 1. 문서 업로드")
+    uploaded_docs = st.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True, key="doc_uploader")
+    
+    st.divider()
+    
+    st.header("🖼️ 2. 이미지 번역용 파일 업로드") # 이미지 번역 섹션 명시
+    st.caption("통지서 내 표/도면 캡처 이미지")
+    img_for_translation = st.file_uploader(
+        "번역할 이미지(표)를 업로드하세요.", 
+        type=['png', 'jpg', 'jpeg'], 
+        accept_multiple_files=True,
+        key="img_translator_uploader"
+    )
+
 # --- 버튼 레이아웃 ---
 btn_col1, btn_col2, btn_col3 = st.columns([1,1,1])
 
@@ -327,6 +344,7 @@ if st.session_state.accum:
         buf = io.BytesIO()
         doc.save(buf)
         st.download_button("Word 다운로드", buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
+
 
 
 
