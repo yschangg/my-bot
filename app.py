@@ -156,6 +156,18 @@ According to the Guidelines for Time Extensions, the Examiner determines whether
 - 번역 제외 대상 예시:
     - 수신: 서울특별시 종로구 세종대로 149, 14층 (세종로, 광화문빌딩)(법무법인센트럴)장훈 귀하(귀중) 03186
 - 번역시, 페이지 번호에 해당하는 것은 번역하지 않고 생략하도록 한다.
+
+# [5. 표 및 이미지의 기계적 치환 규칙] 업데이트
+
+[5. 표 및 이미지의 기계적 치환 규칙]
+
+1. 표(Table) 처리:
+- 원문에 표(Table)가 등장할 경우, 내부 내용을 번역하거나 구조를 재현하지 마십시오.
+- 표가 있던 정확한 위치에 <###TABLE>이라는 문자열만 단독 행으로 표기하고 다음 문장으로 넘어갑니다.
+
+2. 이미지/도면(Figure/Image) 처리:
+- 원문에 도면, 그래프, 사진 등 모든 종류의 이미지가 등장할 경우, 이를 설명하거나 무시하지 마십시오.
+- 이미지가 있던 정확한 위치에 <###FIGURE>라는 문자열만 단독 행으로 표기합니다.
 """
 
 # =========================
@@ -315,6 +327,7 @@ if st.session_state.accum:
         buf = io.BytesIO()
         doc.save(buf)
         st.download_button("Word 다운로드", buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
+
 
 
 
