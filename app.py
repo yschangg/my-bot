@@ -92,6 +92,8 @@ MY_INSTRUCTION = r"""
 - `<< 안내 >>` 문구부터 문서의 최하단(QR 코드 및 주소 포함)까지의 모든 내용은 번역하지 않습니다.
 - 해당 영역 전체를 삭제하고, 아래의 **[영문 고정 문구 블록]** 하나로 통째로 갈음하십시오.
 - **출력 직후 즉시 `End.`를 표기하여 문서가 완결되었음을 나타내십시오.**
+- **[위치 고정 규칙]**: **Attachments(첨부)** 항목은 반드시 본문의 모든 내용이 출력된 후, **날짜(Mailing Date)와 발행기관/심사관 서명란 바로 위**에 위치해야 합니다.
+- 본문 번역 도중 `Attachments:`가 뜬금없이 등장하는 것은 **'치명적인 시스템 오류'**로 간주합니다.
 
 **[영문 고정 문구 블록]**
 
@@ -311,4 +313,5 @@ if st.session_state.accum:
         buf = io.BytesIO()
         doc.save(buf)
         st.download_button("Word 다운로드", buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
+
 
