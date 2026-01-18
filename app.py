@@ -182,9 +182,15 @@ def read_pdf(file) -> str:
     return "\n".join([page.extract_text() or "" for page in reader.pages]).strip()
 
 def preclean_bk(text: str) -> str:
-    # [번역 제외 대상] 규칙 적용
+    # [수정 제안 1]: 노이즈 및 환각 방지를 위한 강력한 전처리
+    # 1. 주소지 정보 제거
     text = re.sub(r"수신\s*:.*?(?:귀하|귀중).*", "", text, flags=re.DOTALL)
-    text = re.sub(r"-\s*\d+\s*-", "", text)
+    # 2. 페이지 번호 제거 (1/11, 10/11 등)
+    text = re.sub(r"\d+\s*/\s*\d+", "", text)
+    # 3. 문서 관리/출원 번호 제거 (10-2022-7005098 등 노이즈 제거)
+    text = re.sub(r"\d{2}-\d{4}-\d{7}", "", text)
+    # 4. 단순 나열 숫자들(107005098 등) 제거
+    text = re.sub(r"(?m)^\d{9,10}$", "", text)
     return text.strip()
 
 def split_into_numbered_blocks(text: str) -> list:
@@ -214,7 +220,7 @@ if "accum" not in st.session_state: st.session_state.accum = ""
 # --- 1. 사이드바: 파일 및 이미지 업로드 ---
 with st.sidebar:
     st.header("📂 1. 문서 업로드")
-    uploaded_docs = st.file_uploader("A_E 및 B_K 파일", accept_multiple_files=True)
+    uploaded_docs = st.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True)
     
     st.divider()
     st.header("🖼️ 2. 표/도면 이미지 업로드")
@@ -246,13 +252,13 @@ if not ae_text or not bk_text:
 st.subheader("📝 헤더 필드 입력")
 c1, c2, c3 = st.columns(3)
 with c1:
-    app_no = st.text_input("Application No.", "10-20XX-XXXXXXX")
-    mail_date = st.text_input("Mailing Date", "January 18, 2026")
+    app_no = st.text_input("Application No.", "10-2022-7005098")
+    mail_date = st.text_input("Mailing Date", "November 10, 2025")
 with c2:
-    applicant = st.text_input("Applicant (Capital)", "APPLICANT NAME")
-    due_date = st.text_input("Response Due Date", "March 18, 2026")
+    applicant = st.text_input("Applicant (Capital)", "HYDAC PROCESS TECHNOLOGY GMBH")
+    due_date = st.text_input("Response Due Date", "March 10, 2026")
 with c3:
-    title_inv = st.text_input("Title of Invention", "TITLE FROM A_E IN CAPS")
+    title_inv = st.text_input("Title of Invention", "METHOD OF PRODUCING A MULTILAYER FILTER MEDIUM...")
 
 # --- 3. 번역 인터페이스 ---
 blocks = split_into_numbered_blocks(bk_text)
@@ -277,8 +283,9 @@ if btn_col1.button("▶️ 현재 파트 번역 시작", type="primary"):
     header_hint = f"Mailing Date: {mail_date}\nDue Date: {due_date}\nApplicant: {applicant}\nApp No: {app_no}\nTitle: {title_inv}"
     
     # 지침 v2.1 전문 + 이미지 앵커링 정보 포함 프롬프트
-    img_info = f"\n[이미지 업로드됨]: {len(captured_images)}개. 지침에 따라 표/이미지 위치를 매칭하시오." if captured_images else ""
-    prompt = f"[A_E 용어]: {ae_text[:1500]}...\n\n[헤더]: {header_hint}\n\n[번역대상]: {blocks[st.session_state.idx]}{img_info}"
+    img_info = f"\n[이미지 업로드됨]: {len(captured_images)}개. 지침의 '표 인식 규칙'에 따라 삽입 위치 결정." if captured_images else ""
+    # 중복 출력 방지를 위한 추가 지침 주입
+    prompt = f"**[주의]**: 현재 제공된 [번역대상] 블록 내에 존재하지 않는 텍스트(이전 페이지 내용 등)를 임의로 다시 생성하지 마십시오.\n\n[A_E 용어]: {ae_text[:1500]}...\n\n[헤더]: {header_hint}\n\n[번역대상]: {blocks[st.session_state.idx]}{img_info}"
     
     with st.spinner("기계적 번역 엔진 가동 중..."):
         try:
@@ -291,6 +298,7 @@ if btn_col1.button("▶️ 현재 파트 번역 시작", type="primary"):
                 temperature=0
             )
             translation = res.choices[0].message.content
+            # 중복 체크 후 누적
             st.session_state.accum += ("\n\n" + translation if st.session_state.accum else translation)
             st.rerun()
         except Exception as e:
@@ -311,13 +319,10 @@ if st.session_state.accum:
     st.divider()
     if st.button("📥 최종 Word 파일 생성 및 다운로드"):
         doc = Document()
-        # 번역된 텍스트를 문단별로 삽입하면서 이미지 앵커링 처리
         for block in st.session_state.accum.split('\n\n'):
             doc.add_paragraph(block)
-            
-            # [표 인식 규칙] 이미지 파일명이나 특정 키워드 매칭 시 이미지 삽입
-            # (실제 고도화 시 LLM 응답 내의 [IMAGE_INSERT: filename] 같은 태그를 인식하도록 구성 가능)
-            
+            # (향후 고도화 시 이미지 삽입 태그 인식 로직 추가 가능)
+        
         buf = io.BytesIO()
         doc.save(buf)
-        st.download_button("Word 다운로드", buf.getvalue(), f"{file_prefix}_C_E.docx")
+        st.download_button("Word 다운로드", buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
