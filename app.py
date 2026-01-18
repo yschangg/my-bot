@@ -45,6 +45,8 @@ MY_INSTRUCTION = r"""
 - **인용발명** → **Reference** (Title Case, Bold)
 - **보정서 제출시 참고사항** → **Notes for Amendment** (Title Case, Bold)
 - **[첨부]** → **Attachments:** (Title Case, 콜론 포함, Bold)
+- 인용발명을 쓸 때 아래와 같은 형식으로 번역을 하도록 하되 **특허 공보 번호 데이터 누락을 하지 않도록 한다.** 
+**Reference 2:    Korean Patent Application Publication No. 10-2019-0019667(February 27, 2019)**
 
 ### [4. 상단 고정 표준 문구 (Introductory Text - Forced Mapping)]
 
@@ -313,5 +315,6 @@ if st.session_state.accum:
         buf = io.BytesIO()
         doc.save(buf)
         st.download_button("Word 다운로드", buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
+
 
 
