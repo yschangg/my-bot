@@ -194,26 +194,34 @@ def read_pdf(file) -> str:
     return "\n".join([page.extract_text() or "" for page in reader.pages]).strip()
 
 def preclean_bk(text: str) -> str:
-    # 지침: 주소지 및 수신인 정보 완전 누락(Omit)
+    # 주소지 정보 등 번역 제외 대상 1차 제거
     text = re.sub(r"수신\s*:.*?(?:귀하|귀중).*", "", text, flags=re.DOTALL)
-    # 지침: 페이지 번호 생략
     text = re.sub(r"-\s*\d+\s*-", "", text)
-    text = re.sub(r"Page\s*\d+\s*/\s*\d+", "", text, flags=re.IGNORECASE)
     return text.strip()
 
-st.set_page_config(page_title="특허 OA 기계적 번역 엔진 v2.1", layout="wide")
+def split_into_numbered_blocks(text: str) -> list:
+    # 지침에 따른 번호 단락 경계 분할
+    pat = re.compile(r"(?m)^(?:\s*(\d+\.)\s+|\s*(\(\d+\))\s+|\s*([①-⑩])\s+|\s*(\[첨\s*부\])\s*|(- 보정서 제출시 참고사항 -))")
+    idxs = [m.start() for m in pat.finditer(text)]
+    if not idxs: return [text]
+    idxs.append(len(text))
+    return [text[idxs[i]:idxs[i+1]].strip() for i in range(len(idxs)-1)]
+
+st.set_page_config(page_title="특허 OA 번역 v2.1", layout="wide")
 st.title("⚖️ 특허 OA 기계적 번역 엔진 (v2.1)")
 
+# API KEY CHECK
 OPENAI_KEY = st.secrets.get("OPENAI_API_KEY")
 if not OPENAI_KEY:
-    st.error("API 키가 없습니다.")
+    st.error("API 키 설정이 필요합니다.")
     st.stop()
 
 MODEL_NAME = st.secrets.get("MODEL_NAME", "gpt-4o")
 client = OpenAI(api_key=OPENAI_KEY)
 
-# --- 파일 업로드 및 데이터 처리 ---
-uploaded_files = st.sidebar.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True)
+# --- 1. 파일 업로드 ---
+with st.sidebar:
+    uploaded_files = st.file_uploader("A_E 및 B_K 파일 업로드", accept_multiple_files=True)
 
 ae_text = ""
 bk_text = ""
@@ -228,22 +236,79 @@ if uploaded_files:
         elif "B_K" in f.name:
             bk_text = preclean_bk(content)
 
+# 파일 업로드 전에는 중단
 if not ae_text or not bk_text:
-    st.info("파일을 업로드해주세요.")
+    st.info("파일을 업로드하면 헤더 입력창과 번역 버튼이 나타납니다.")
     st.stop()
 
-# --- 번역 프로세스 UI (블록 단위) ---
-# (기존 블록 분할 및 세션 상태 로직 유지)
-# ... [이하 생략된 UI 로직은 이전 코드와 동일하게 작동하며 MY_INSTRUCTION을 참조함] ...
+# --- 2. 헤더 정보 및 버튼 노출 (파일 업로드 후에만 실행) ---
+st.subheader("헤더 필드 입력")
+c1, c2, c3 = st.columns(3)
+with c1:
+    app_no = st.text_input("Application No.", "10-20XX-XXXXXXX")
+    mail_date = st.text_input("Mailing Date (English)", "Month DD, YYYY")
+with c2:
+    applicant = st.text_input("Applicant (Capital)", "APPLICANT NAME")
+    due_date = st.text_input("Response Due Date", "Month DD, YYYY")
+with c3:
+    title_inv = st.text_input("Title of Invention (from A_E)", "TITLE IN CAPS")
 
-st.success("지침 v2.1이 시스템 프롬프트에 그대로 적용되었습니다.")
+# --- 3. 번역 인터페이스 ---
+blocks = split_into_numbered_blocks(bk_text)
+if "idx" not in st.session_state: st.session_state.idx = 0
+if "accum" not in st.session_state: st.session_state.accum = ""
 
-# 필요한 경우 블록 번역 버튼 클릭 시 아래와 같이 호출됩니다.
-# res = client.chat.completions.create(
-#     model=MODEL_NAME,
-#     messages=[
-#         {"role": "system", "content": MY_INSTRUCTION},
-#         {"role": "user", "content": prompt}
-#     ],
-#     temperature=0
-# )
+st.divider()
+st.markdown(f"### 번역 진행 중: {st.session_state.idx + 1} / {len(blocks)} 블록")
+
+col_src, col_res = st.columns(2)
+with col_src:
+    st.text_area("국문 원본 블록", blocks[st.session_state.idx], height=300)
+with col_res:
+    st.text_area("누적 영문 번역본", st.session_state.accum, height=300)
+
+# --- 버튼 레이아웃 ---
+btn_col1, btn_col2, btn_col3 = st.columns([1,1,1])
+
+if btn_col1.button("▶️ 현재 파트 번역 시작", type="primary"):
+    header_hint = f"Mailing Date: {mail_date}\nDue Date: {due_date}\nApplicant: {applicant}\nApp No: {app_no}\nTitle: {title_inv}"
+    prompt = f"[A_E 용어참조]\n{ae_text[:1500]}...\n\n[헤더정보]\n{header_hint}\n\n[번역대상]\n{blocks[st.session_state.idx]}"
+    
+    with st.spinner("번역 중..."):
+        try:
+            res = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": MY_INSTRUCTION},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0
+            )
+            translation = res.choices[0].message.content
+            st.session_state.accum += ("\n\n" + translation if st.session_state.accum else translation)
+            st.rerun()
+        except Exception as e:
+            st.error(f"오류 발생: {e}")
+
+if btn_col2.button("➡️ 다음 단락으로"):
+    if st.session_state.idx < len(blocks) - 1:
+        st.session_state.idx += 1
+        st.rerun()
+    else:
+        st.warning("마지막 단락입니다.")
+
+if btn_col3.button("🔄 초기화"):
+    st.session_state.idx = 0
+    st.session_state.accum = ""
+    st.rerun()
+
+# --- 4. 다운로드 ---
+if st.session_state.accum:
+    st.divider()
+    if st.button("📥 최종 DOCX 파일 생성 및 다운로드"):
+        doc = Document()
+        for line in st.session_state.accum.split('\n'):
+            doc.add_paragraph(line)
+        buf = io.BytesIO()
+        doc.save(buf)
+        st.download_button(label="다운로드 시작", data=buf.getvalue(), file_name=f"{file_prefix}_C_E.docx")
